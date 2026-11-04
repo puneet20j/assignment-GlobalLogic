@@ -1,14 +1,26 @@
 import logging
+import uuid
+from typing import Annotated
 
-from fastapi import APIRouter, FastAPI, Request
+from fastapi import APIRouter, FastAPI, Query, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException
 
+from app import tenants
+from app.models import Task, TaskStatus, TaskType, Tenant, TenantStatus
+from app.schemas import Page, TaskOut, TenantCreate, TenantOut, TenantUpdate, TenantWithTask
 from app.tenants import ApiError
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/v1")
+
+@router.post("/tenants", status_code=202, response_model=TenantWithTask)
+async def create_tenant(body: TenantCreate, response: Response):
+    result = await tenants.create_tenant(body.slug, body.name)
+    response.headers["Location"] = f"/v1/tenants/{result['tenant'].id}"
+    return result
+
 
 def error_response(status, code, message, details=None):
     body = {"error": {"code": code, "message": message, "details": details or {}}}
