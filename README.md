@@ -1,0 +1,184 @@
+# Tenant Control Plane
+
+A multi-tenant FastAPI service that manages tenant lifecycle. When a customer signs up, the control plane records the tenant and publishes a provisioning event. Background workers consume the event, perform the potentially long-running provisioning work, and report progress back through a message queue.
+
+## Features
+
+- Tenant registration and persistent lifecycle state
+- Asynchronous tenant provisioning that does not block signup requests
+- Message-driven communication between the API and provisioning workers
+- Provisioning progress and status updates
+- Independently scalable API and worker services
+- Support for provisioning operations that may take several minutes
+
+## Architecture
+
+```text
+Customer signup
+      |
+      v
+FastAPI control plane
+      |
+      |-- Stores tenant and provisioning state
+      |
+      |-- Emits tenant.provisioning.requested
+      v
+   Message queue
+      |
+      v
+Provisioning workers
+      |
+      |-- Execute tenant infrastructure setup
+      |-- Publish progress and completion events
+      v
+Message queue -> Control plane state updates
+```
+
+The control plane and provisioning workers communicate through events rather than waiting synchronously. This keeps signup responses fast while allowing provisioning work to run safely in the background.
+
+## Provisioning Flow
+
+1. A customer signs up through an API request.
+2. The control plane validates the request and creates the tenant record.
+3. The tenant is set to a provisioning state such as `pending`.
+4. The control plane emits a provisioning event to the message queue.
+5. A worker picks up the event and starts provisioning.
+6. The worker publishes status updates for steps such as queued, in progress, completed, or failed.
+7. The control plane records the latest status and exposes it to callers.
+
+## Getting Started
+
+### Prerequisites
+
+- Python 3.11 or later
+- A supported message broker, such as RabbitMQ or Kafka
+- A database supported by the project
+- Docker and Docker Compose, if using the containerized development environment
+
+### Installation
+
+1. Clone the repository:
+
+   ```bash
+   git clone <repository-url>
+   cd tenant-control-plane
+   ```
+
+2. Create and activate a virtual environment:
+
+   ```bash
+   python -m venv .venv
+   source .venv/bin/activate
+   ```
+
+   On Windows, activate it with:
+
+   ```powershell
+   .venv\Scripts\Activate.ps1
+   ```
+
+3. Install dependencies:
+
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+4. Copy the example environment configuration and update it for your services:
+
+   ```bash
+   cp .env.example .env
+   ```
+
+### Running Locally
+
+Start the required infrastructure and the application using your project's configured Docker Compose or process commands. A typical setup starts:
+
+- The FastAPI control plane
+- The message broker
+- The worker service
+- The application database
+
+For example, when Docker Compose is configured:
+
+```bash
+docker compose up
+```
+
+The API is commonly available at `http://localhost:8000`, with interactive documentation at `http://localhost:8000/docs`.
+
+## API Overview
+
+Typical endpoints include:
+
+| Method | Path | Description |
+| --- | --- | --- |
+| `POST` | `/tenants` | Create a tenant and queue provisioning |
+| `GET` | `/tenants/{tenant_id}` | Retrieve tenant details and provisioning status |
+| `GET` | `/tenants` | List tenants |
+| `DELETE` | `/tenants/{tenant_id}` | Delete or begin deprovisioning a tenant |
+
+Confirm the exact routes and request schemas in the project's OpenAPI documentation.
+
+## Events and Statuses
+
+The following events may be emitted between the control plane and workers:
+
+- `tenant.provisioning.requested`
+- `tenant.provisioning.started`
+- `tenant.provisioning.progress`
+- `tenant.provisioning.completed`
+- `tenant.provisioning.failed`
+
+Provisioning state may include:
+
+- `pending`
+- `provisioning`
+- `active`
+- `failed`
+- `deleting`
+- `deleted`
+
+Workers should publish progress idempotently and handle duplicate or retried events safely.
+
+## Testing
+
+Run the automated test suite with:
+
+```bash
+pytest
+```
+
+Add integration tests for event publishing, worker consumption, retries, and provisioning status transitions.
+
+## Configuration
+
+Configuration is normally supplied through environment variables. Common settings include:
+
+- Database connection URL
+- Message broker connection URL
+- Queue or topic names
+- API host and port
+- Worker concurrency
+- Provisioning timeout and retry settings
+
+Never commit credentials or environment-specific secrets.
+
+## Operational Considerations
+
+- Treat provisioning events as potentially duplicated or retried.
+- Use durable queues and message acknowledgements to avoid losing work.
+- Store worker progress as tenant lifecycle state for reliable status reporting.
+- Apply retry limits and dead-letter handling to failed provisioning jobs.
+- Protect tenant provisioning operations against concurrent workers processing the same tenant.
+- Use correlation IDs or tenant IDs when tracing signup and provisioning events.
+
+## Contributing
+
+1. Fork the repository.
+2. Create a feature branch: `git checkout -b feature/your-feature`
+3. Commit and push your changes.
+4. Open a pull request and describe the tenant lifecycle behavior covered.
+
+## License
+
+No license has been specified for this project.
