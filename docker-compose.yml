@@ -39,6 +39,16 @@ services:
       postgres:
         condition: service_healthy
 
+  app:
+    <<: *app
+    ports:
+      - "8001:8000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      elasticmq:
+        condition: service_started
+
 volumes:
   pgdata:
   mqdata:
