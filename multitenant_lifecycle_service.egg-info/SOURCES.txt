@@ -1,8 +1,0 @@
-README.md
-pyproject.toml
-app/__init__.py
-app/models.py
-multitenant_lifecycle_service.egg-info/PKG-INFO
-multitenant_lifecycle_service.egg-info/SOURCES.txt
-multitenant_lifecycle_service.egg-info/dependency_links.txt
-multitenant_lifecycle_service.egg-info/top_level.txt

@@ -9,7 +9,11 @@ version = "0.1.0"
 description = "A standard Python project configuration"
 readme = "README.md"
 requires-python = ">=3.11"
-dependencies = []
+dependencies = [
+    "alembic>=1.20.1",
+    "asyncpg>=0.32.0",
+    "sqlalchemy[asyncio]>=2.1.8",
+]
 
 [dependency-groups]
 dev = [
@@ -17,6 +21,9 @@ dev = [
     "pytest-asyncio>=0.25",
     "ruff>=0.9",
 ]
+
+[tool.setuptools]
+packages = ["app"]
 
 [tool.ruff]
 line-length = 100
