@@ -26,6 +26,55 @@ async def create_tenant(slug, name):
         session.add(task)
     return {"tenant": tenant, "task": task}
   
+  
+async def update_tenant(tenant_id, name, version):
+    allowed = {TenantStatus.ACTIVE}
+    changes = {"name": name, "status": TenantStatus.UPDATING}
+    return await _transition(tenant_id, version, allowed, TaskType.UPDATE, changes)
+
+async def delete_tenant(tenant_id, version):
+    allowed = {TenantStatus.ACTIVE, TenantStatus.FAILED}
+    changes = {"status": TenantStatus.DESTROYING}
+    return await _transition(tenant_id, version, allowed, TaskType.DESTROY, changes)
+
+async def _transition(tenant_id, version, allowed, task_type, changes):
+    guards = [Tenant.id == tenant_id, Tenant.status.in_(allowed)]
+    if version is not None:
+        guards.append(Tenant.version == version)
+
+    async with Session.begin() as session:
+        tenant = await session.scalar(
+            update(Tenant)
+            .where(*guards)
+            .values(version=Tenant.version + 1, **changes)
+            .returning(Tenant)
+        )
+        if tenant is None:
+            await _explain_rejection(session, tenant_id, version, allowed)
+        task = Task(tenant_id=tenant.id, type=task_type)
+        session.add(task)
+    return {"tenant": tenant, "task": task}
+
+async def _explain_rejection(session, tenant_id, version, allowed):
+    # if stale version comes, client view should refetch
+    if tenant is None:
+        raise ApiError(404, "tenant_not_found", f"tenant {tenant_id} not found")
+    if version is not None and tenant.version != version:
+        raise ApiError(
+            409,
+            "tenant_version_conflict",
+            f"tenant {tenant_id} is at version {tenant.version}, not {version}",
+            current_version=tenant.version,
+            expected_version=version,
+        )
+    raise ApiError(
+        409,
+        "tenant_update_not_allowed",
+        f"not allowed in status '{tenant.status}'",
+        status=tenant.status,
+        allowed_statuses=sorted(allowed),
+    )
+  
 
 async def get_tenant(tenant_id):
     async with Session() as session:
