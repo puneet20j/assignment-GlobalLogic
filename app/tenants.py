@@ -25,3 +25,26 @@ async def create_tenant(slug, name):
         task = Task(tenant_id=tenant.id, type=TaskType.DEPLOY)
         session.add(task)
     return {"tenant": tenant, "task": task}
+  
+
+async def get_tenant(tenant_id):
+    async with Session() as session:
+        tenant = await session.get(Tenant, tenant_id)
+    if tenant is None:
+        raise ApiError(404, "tenant_not_found", f"tenant {tenant_id} not found")
+    return tenant
+
+async def get_task(task_id):
+    async with Session() as session:
+        task = await session.get(Task, task_id)
+    if task is None:
+        raise ApiError(404, "task_not_found", f"task {task_id} not found")
+    return task
+
+async def page(model, limit, offset, **filters):
+    """Newest first. Fetches one extra row to know about the next page without a COUNT."""
+    active = {key: value for key, value in filters.items() if value is not None}
+    stmt = select(model).filter_by(**active).order_by(model.created_at.desc(), model.id.desc())
+    async with Session() as session:
+        rows = list(await session.scalars(stmt.limit(limit + 1).offset(offset)))
+    return {"items": rows[:limit], "limit": limit, "offset": offset, "has_more": len(rows) > limit}

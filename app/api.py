@@ -14,12 +14,49 @@ from app.tenants import ApiError
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/v1")
+Limit = Annotated[int, Query(ge=1, le=100)]
+Offset = Annotated[int, Query(ge=0)]
+
 
 @router.post("/tenants", status_code=202, response_model=TenantWithTask)
 async def create_tenant(body: TenantCreate, response: Response):
     result = await tenants.create_tenant(body.slug, body.name)
     response.headers["Location"] = f"/v1/tenants/{result['tenant'].id}"
     return result
+
+
+@router.get("/tenants", response_model=Page[TenantOut])
+async def list_tenants(status: TenantStatus | None = None, limit: Limit = 20, offset: Offset = 0):
+    return await tenants.page(Tenant, limit, offset, status=status)
+
+@router.get("/tenants/{tenant_id}", response_model=TenantOut)
+async def get_tenant(tenant_id: uuid.UUID):
+    return await tenants.get_tenant(tenant_id)
+
+@router.get("/tenants/{tenant_id}/tasks", response_model=Page[TaskOut])
+async def list_tenant_tasks(
+    tenant_id: uuid.UUID,
+    status: TaskStatus | None = None,
+    type: TaskType | None = None,
+    limit: Limit = 20,
+    offset: Offset = 0,
+):
+    await tenants.get_tenant(tenant_id)
+    return await tenants.page(Task, limit, offset, tenant_id=tenant_id, status=status, type=type)
+
+@router.get("/tasks", response_model=Page[TaskOut])
+async def list_tasks(
+    tenant_id: uuid.UUID | None = None,
+    status: TaskStatus | None = None,
+    type: TaskType | None = None,
+    limit: Limit = 20,
+    offset: Offset = 0,
+):
+    return await tenants.page(Task, limit, offset, tenant_id=tenant_id, status=status, type=type)
+
+@router.get("/tasks/{task_id}", response_model=TaskOut)
+async def get_task(task_id: uuid.UUID):
+    return await tenants.get_task(task_id)
 
 
 def error_response(status, code, message, details=None):
