@@ -34,13 +34,16 @@ async def list_tenants(status: TenantStatus | None = None, limit: Limit = 20, of
 async def get_tenant(tenant_id: uuid.UUID):
     return await tenants.get_tenant(tenant_id)
 
+
 @router.patch("/tenants/{tenant_id}", status_code=202, response_model=TenantWithTask)
 async def update_tenant(tenant_id: uuid.UUID, body: TenantUpdate):
     return await tenants.update_tenant(tenant_id, body.name, body.version)
 
+
 @router.delete("/tenants/{tenant_id}", status_code=202, response_model=TenantWithTask)
 async def delete_tenant(tenant_id: uuid.UUID, version: Annotated[int | None, Query(ge=1)] = None):
     return await tenants.delete_tenant(tenant_id, version)
+
 
 @router.get("/tenants/{tenant_id}/tasks", response_model=Page[TaskOut])
 async def list_tenant_tasks(
@@ -52,6 +55,7 @@ async def list_tenant_tasks(
 ):
     await tenants.get_tenant(tenant_id)
     return await tenants.page(Task, limit, offset, tenant_id=tenant_id, status=status, type=type)
+
 
 @router.get("/tasks", response_model=Page[TaskOut])
 async def list_tasks(
@@ -72,6 +76,7 @@ async def get_task(task_id: uuid.UUID):
 def error_response(status, code, message, details=None):
     body = {"error": {"code": code, "message": message, "details": details or {}}}
     return JSONResponse(status_code=status, content=body)
+
 
 def add_error_handlers(app: FastAPI):
     @app.exception_handler(ApiError)

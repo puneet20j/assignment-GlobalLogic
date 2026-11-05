@@ -8,6 +8,7 @@ from app.schemas import TaskMessage, TenantRef
 
 logger = logging.getLogger(__name__)
 
+
 async def publish_one(sqs, queue_url):
     """Sends the oldest unpublished task in its own transaction"""
     async with Session.begin() as session:
@@ -17,7 +18,7 @@ async def publish_one(sqs, queue_url):
             .where(Task.published_at.is_(None))
             .order_by(Task.created_at)
             .limit(1)
-            .with_for_update(of=Task, skip_locked=True) 
+            .with_for_update(of=Task, skip_locked=True)
         )
         row = result.first()
         if row is None:
@@ -35,6 +36,7 @@ async def publish_one(sqs, queue_url):
         await sqs.send_message(QueueUrl=queue_url, MessageBody=message.model_dump_json())
         task.published_at = func.now()
     return True
+
 
 async def run_relay(sqs, queue_url):
     while True:

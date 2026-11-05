@@ -12,6 +12,7 @@ DATABASE_URL = os.environ["DATABASE_URL"]
 engine = create_async_engine(DATABASE_URL)
 Session = async_sessionmaker(engine, expire_on_commit=False)
 
+
 class TenantStatus(StrEnum):
     PROVISIONING = "provisioning"
     ACTIVE = "active"
@@ -20,10 +21,12 @@ class TenantStatus(StrEnum):
     DESTROYED = "destroyed"
     FAILED = "failed"
 
+
 class TaskType(StrEnum):
     DEPLOY = "deploy"
     UPDATE = "update"
     DESTROY = "destroy"
+
 
 class TaskStatus(StrEnum):
     ACCEPTED = "accepted"
@@ -31,14 +34,17 @@ class TaskStatus(StrEnum):
     DONE = "done"
     FAILED = "failed"
 
+
 class Base(DeclarativeBase):
     pass
+
 
 class Timestamps:
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
+
 
 class Tenant(Timestamps, Base):
     __tablename__ = "tenants"
@@ -49,6 +55,7 @@ class Tenant(Timestamps, Base):
     status: Mapped[str]
     version: Mapped[int] = mapped_column(default=1)
 
+
 class Task(Timestamps, Base):
     __tablename__ = "tasks"
 
@@ -57,7 +64,8 @@ class Task(Timestamps, Base):
     type: Mapped[str]
     status: Mapped[str] = mapped_column(default=TaskStatus.ACCEPTED)
     error: Mapped[str | None]
-    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True)) # outbox field
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))  # outbox field
+
 
 class ProcessedUpdate(Base):
     __tablename__ = "processed_updates"

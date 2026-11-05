@@ -29,6 +29,7 @@ STATUS_ON_DONE = {
     TaskType.DESTROY: TenantStatus.DESTROYED,
 }
 
+
 async def apply_update(msg):
     async with Session.begin() as session:
         task = await session.scalar(select(Task).where(Task.id == msg.task_id).with_for_update())
@@ -53,7 +54,7 @@ async def apply_update(msg):
         if msg.status != TaskStatus.IN_PROGRESS:
             await finish_tenant(session, task)
     return "applied"
-  
+
 
 async def finish_tenant(session, task):
     done = task.status == TaskStatus.DONE
@@ -62,15 +63,14 @@ async def finish_tenant(session, task):
         .where(Tenant.id == task.tenant_id, Tenant.status == STATUS_WHILE_OPEN[task.type])
         .values(
             status=STATUS_ON_DONE[task.type] if done else TenantStatus.FAILED,
-            version=Tenant.version + 1, # optimistic locking
+            version=Tenant.version + 1,  # optimistic locking
         )
         .returning(Tenant.id)
     )
     if tenant_id is None:
         logger.warning("task %s finished but tenant %s is not open", task.id, task.tenant_id)
-        
-        
-        
+
+
 async def handle(sqs, queue_url, message):
     try:
         msg = TaskUpdate.model_validate_json(message["Body"])

@@ -11,6 +11,7 @@ from app.sqs import queue_url, sqs_client
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
+
 @asynccontextmanager
 async def lifespan(app):
     async with sqs_client() as sqs:
@@ -25,9 +26,11 @@ async def lifespan(app):
             loop.cancel()
         await asyncio.gather(*loops, return_exceptions=True)
 
+
 app = FastAPI(title="Tenant Control Plane", lifespan=lifespan)
 app.include_router(router)
 add_error_handlers(app)
+
 
 @app.get("/healthz")
 async def healthz():

@@ -16,6 +16,7 @@ MAX_DELAY_MS = int(os.environ.get("WORKER_MAX_DELAY_MS", "2000"))
 
 logger = logging.getLogger("worker")
 
+
 def make_update(task_id, status, error=None):
     # same id on every attempt, so a redelivered task is deduped on the key alone
     return TaskUpdate(
@@ -25,6 +26,7 @@ def make_update(task_id, status, error=None):
         occurred_at=datetime.now(UTC),
         error=error,
     )
+
 
 async def run_task(sqs, updates_url, task):
     async def report(update):
@@ -49,6 +51,7 @@ async def run_task(sqs, updates_url, task):
         await asyncio.sleep(delay)
         await report(outcome)
 
+
 async def handle(sqs, tasks_url, updates_url, message):
     try:
         task = TaskMessage.model_validate_json(message["Body"])
@@ -58,6 +61,7 @@ async def handle(sqs, tasks_url, updates_url, message):
         logger.info("%s task %s for %s finished", task.type, task.id, task.tenant.slug)
     except Exception:
         logger.exception("message %s failed, it will come back", message["MessageId"])
+
 
 async def main():
     async with sqs_client() as sqs:
@@ -76,6 +80,7 @@ async def main():
             # tasks of different tenants are independent, run the batch concurrently
             messages = resp.get("Messages", [])
             await asyncio.gather(*(handle(sqs, tasks_url, updates_url, m) for m in messages))
+
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s: %(message)s")

@@ -72,6 +72,11 @@ services:
       AWS_ACCESS_KEY_ID: test
       AWS_SECRET_ACCESS_KEY: test
 
+  tests:
+    <<: *app
+    profiles: ["test"]
+    command: sh -c "ruff check . && ruff format --check . && pytest -v"
+
 volumes:
   pgdata:
   mqdata:

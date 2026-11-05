@@ -6,8 +6,10 @@ from pydantic import BaseModel, ConfigDict, Field, PlainSerializer, StringConstr
 
 from app.models import TaskStatus, TaskType, TenantStatus
 
+
 def format_timestamp(value: datetime) -> str:
     return value.astimezone(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+
 
 Timestamp = Annotated[datetime, PlainSerializer(format_timestamp, return_type=str)]
 Slug = Annotated[str, Field(pattern=r"^[a-z][-a-z0-9]{1,26}[a-z0-9]$")]
@@ -19,6 +21,7 @@ class TenantCreate(BaseModel):
 
     slug: Slug
     name: Name
+
 
 class TenantUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -38,6 +41,7 @@ class TenantOut(BaseModel):
     created_at: Timestamp
     updated_at: Timestamp
 
+
 class TaskOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -49,13 +53,16 @@ class TaskOut(BaseModel):
     created_at: Timestamp
     updated_at: Timestamp
 
+
 class TenantWithTask(BaseModel):
     tenant: TenantOut
     task: TaskOut
-    
+
+
 class TenantRef(BaseModel):
     slug: str
     name: str
+
 
 class TaskMessage(BaseModel):
     # id => event_id
@@ -71,7 +78,8 @@ class TaskUpdate(BaseModel):
     # update_id => idempotent
     update_id: str = Field(min_length=1, max_length=100)
     task_id: uuid.UUID
-    status: Literal[TaskStatus.IN_PROGRESS, TaskStatus.DONE, TaskStatus.FAILED] # task creation by control plane
+    # no ACCEPTED: only the control plane creates tasks in that state
+    status: Literal[TaskStatus.IN_PROGRESS, TaskStatus.DONE, TaskStatus.FAILED]
     occurred_at: Timestamp
     error: str | None = None
 

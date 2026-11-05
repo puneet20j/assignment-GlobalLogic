@@ -10,7 +10,7 @@ class ApiError(Exception):
         self.code = code
         self.message = message
         self.details = details
-        
+
 
 async def create_tenant(slug, name):
     async with Session.begin() as session:
@@ -25,17 +25,19 @@ async def create_tenant(slug, name):
         task = Task(tenant_id=tenant.id, type=TaskType.DEPLOY)
         session.add(task)
     return {"tenant": tenant, "task": task}
-  
-  
+
+
 async def update_tenant(tenant_id, name, version):
     allowed = {TenantStatus.ACTIVE}
     changes = {"name": name, "status": TenantStatus.UPDATING}
     return await _transition(tenant_id, version, allowed, TaskType.UPDATE, changes)
 
+
 async def delete_tenant(tenant_id, version):
     allowed = {TenantStatus.ACTIVE, TenantStatus.FAILED}
     changes = {"status": TenantStatus.DESTROYING}
     return await _transition(tenant_id, version, allowed, TaskType.DESTROY, changes)
+
 
 async def _transition(tenant_id, version, allowed, task_type, changes):
     guards = [Tenant.id == tenant_id, Tenant.status.in_(allowed)]
@@ -54,6 +56,7 @@ async def _transition(tenant_id, version, allowed, task_type, changes):
         task = Task(tenant_id=tenant.id, type=task_type)
         session.add(task)
     return {"tenant": tenant, "task": task}
+
 
 async def _explain_rejection(session, tenant_id, version, allowed):
     # if stale version comes, client view should refetch
@@ -75,7 +78,7 @@ async def _explain_rejection(session, tenant_id, version, allowed):
         status=tenant.status,
         allowed_statuses=sorted(allowed),
     )
-  
+
 
 async def get_tenant(tenant_id):
     async with Session() as session:
@@ -84,12 +87,14 @@ async def get_tenant(tenant_id):
         raise ApiError(404, "tenant_not_found", f"tenant {tenant_id} not found")
     return tenant
 
+
 async def get_task(task_id):
     async with Session() as session:
         task = await session.get(Task, task_id)
     if task is None:
         raise ApiError(404, "task_not_found", f"task {task_id} not found")
     return task
+
 
 async def page(model, limit, offset, **filters):
     """Newest first. Fetches one extra row to know about the next page without a COUNT."""
