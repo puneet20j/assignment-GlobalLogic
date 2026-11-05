@@ -52,6 +52,29 @@ class TaskOut(BaseModel):
 class TenantWithTask(BaseModel):
     tenant: TenantOut
     task: TaskOut
+    
+class TenantRef(BaseModel):
+    slug: str
+    name: str
+
+class TaskMessage(BaseModel):
+    # id => event_id
+    id: uuid.UUID
+    type: TaskType
+    tenant_id: uuid.UUID
+    status: TaskStatus
+    created_at: Timestamp
+    tenant: TenantRef
+
+
+class TaskUpdate(BaseModel):
+    # update_id => idempotent
+    update_id: str = Field(min_length=1, max_length=100)
+    task_id: uuid.UUID
+    status: Literal[TaskStatus.IN_PROGRESS, TaskStatus.DONE, TaskStatus.FAILED] # task creation by control plane
+    occurred_at: Timestamp
+    error: str | None = None
+
 
 class Page[T](BaseModel):
     items: list[T]

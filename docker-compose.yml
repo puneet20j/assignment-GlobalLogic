@@ -49,6 +49,15 @@ services:
       elasticmq:
         condition: service_started
 
+  aws:
+    image: amazon/aws-cli:2.27.0
+    profiles: ["tools"]
+    environment:
+      AWS_ENDPOINT_URL: http://elasticmq:9324
+      AWS_DEFAULT_REGION: us-east-1
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+
 volumes:
   pgdata:
   mqdata:
