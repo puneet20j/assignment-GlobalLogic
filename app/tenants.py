@@ -57,6 +57,7 @@ async def _transition(tenant_id, version, allowed, task_type, changes):
 
 async def _explain_rejection(session, tenant_id, version, allowed):
     # if stale version comes, client view should refetch
+    tenant = await session.get(Tenant, tenant_id)
     if tenant is None:
         raise ApiError(404, "tenant_not_found", f"tenant {tenant_id} not found")
     if version is not None and tenant.version != version:

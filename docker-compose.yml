@@ -49,6 +49,20 @@ services:
       elasticmq:
         condition: service_started
 
+  worker:
+    <<: *app
+    environment:
+      <<: *env
+      WORKER_FAIL_RATE: ${WORKER_FAIL_RATE:-0}
+      WORKER_DUPLICATE_RATE: ${WORKER_DUPLICATE_RATE:-0}
+      WORKER_REORDER: ${WORKER_REORDER:-false}
+      WORKER_MIN_DELAY_MS: ${WORKER_MIN_DELAY_MS:-500}
+      WORKER_MAX_DELAY_MS: ${WORKER_MAX_DELAY_MS:-2000}
+    command: python -m app.worker
+    init: true
+    depends_on:
+      - elasticmq
+
   aws:
     image: amazon/aws-cli:2.27.0
     profiles: ["tools"]
