@@ -130,6 +130,8 @@ async def test_patch_not_allowed_while_provisioning(client):
     [
         ("POST", "/tenants", {"slug": "Bad_Slug", "name": "x"}, 422, "validation_error"),
         ("POST", "/tenants", {"slug": "okay", "name": "x", "a": 1}, 422, "validation_error"),
+        ("POST", "/tenants", {"slug": "okay", "name": "a\u0000b"}, 422, "validation_error"),
+        ("POST", "/tenants", {"slug": "okay", "name": "a\uffffb"}, 422, "validation_error"),
         ("GET", "/tenants?limit=101", None, 422, "validation_error"),
         ("GET", f"/tenants/{uuid.uuid4()}", None, 404, "tenant_not_found"),
         ("GET", f"/tasks/{uuid.uuid4()}", None, 404, "task_not_found"),

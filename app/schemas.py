@@ -10,11 +10,13 @@ from app.models import TaskStatus, TaskType, TenantStatus
 def format_timestamp(value: datetime) -> str:
     return value.astimezone(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
-
+NAME_PATTERN = r"^[^\x00-\x1f\x7f\x{fffe}\x{ffff}]+$"
 Timestamp = Annotated[datetime, PlainSerializer(format_timestamp, return_type=str)]
 Slug = Annotated[str, Field(pattern=r"^[a-z][-a-z0-9]{1,26}[a-z0-9]$")]
-Name = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
-
+Name = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True, min_length=1, max_length=200, pattern=NAME_PATTERN),
+]
 
 class TenantCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
