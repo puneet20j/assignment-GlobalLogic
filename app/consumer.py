@@ -1,7 +1,7 @@
 import asyncio
 import logging
 
-from sqlalchemy import select, update, text
+from sqlalchemy import select, text, update
 from sqlalchemy.dialects.postgresql import insert
 
 from app.models import ProcessedUpdate, Session, Task, TaskStatus, TaskType, Tenant, TenantStatus
@@ -50,6 +50,10 @@ async def apply_update(msg):
         # accepted -> done allowed. Can overtake in_progress
         # finish_task here doesnt commit. The task, tenant and the inbox must all commit together
         if RANK[msg.status] <= RANK[task.status]:
+            if RANK[task.status] == RANK[msg.status] == 2 and task.status != msg.status:
+                logger.warning(
+                    "task %s is %s, worker reported %s", task.id, task.status, msg.status
+                )
             return "stale"
 
         if msg.status == TaskStatus.IN_PROGRESS:
@@ -84,7 +88,7 @@ async def handle(sqs, queue_url, message):
     except Exception:
         logger.exception("message %s failed, it will come back", message["MessageId"])
         return False
-    
+
 
 async def wait_for_database():
     attempt = 0

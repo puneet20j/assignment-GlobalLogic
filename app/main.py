@@ -8,6 +8,7 @@ from app.api import add_error_handlers, router
 from app.consumer import run_consumer
 from app.relay import run_relay
 from app.sqs import queue_url, sqs_client
+from app.sweeper import run_sweeper
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
@@ -20,6 +21,7 @@ async def lifespan(app):
         loops = [
             asyncio.create_task(run_relay(sqs, tasks_url)),
             asyncio.create_task(run_consumer(sqs, updates_url)),
+            asyncio.create_task(run_sweeper()),
         ]
         yield
         for loop in loops:

@@ -1,10 +1,11 @@
 import asyncio
+import logging
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import httpx
 import pytest
-from sqlalchemy import func
+from sqlalchemy import func, update
 
 from app.consumer import apply_update
 from app.models import (
@@ -17,6 +18,7 @@ from app.models import (
 )
 from app.schemas import TaskUpdate
 from app.sqs import queue_url, retry_delay, sqs_client
+from app.sweeper import fail_stuck_tasks
 
 API = "http://app:8000/v1"
 N = 30
@@ -282,3 +284,39 @@ async def test_task_that_already_moved_on_is_not_sent_again(client):
     assert await state(tenant.id, task.id) == ("provisioning", 1, "in_progress")
     async with Session() as session:
         assert (await session.get(Task, task.id)).published_at is None
+
+
+async def make_quiet(task_id, seconds=120):
+    async with Session.begin() as session:
+        await session.execute(
+            update(Task)
+            .where(Task.id == task_id)
+            .values(updated_at=datetime.now(UTC) - timedelta(seconds=seconds))
+        )
+
+
+async def test_sweeper_fails_a_quiet_task_and_frees_the_tenant(client):
+    tenant_id, task_id = await seed_task()
+    await make_quiet(task_id)
+
+    assert await fail_stuck_tasks(60) >= 1
+    assert await state(tenant_id, task_id) == ("failed", 2, "failed")
+    assert (await client.delete(f"/tenants/{tenant_id}")).status_code == 202
+
+
+async def test_sweeper_leaves_recent_and_unpublished_tasks_alone():
+    tenant_id, task_id = await seed_task()
+    await fail_stuck_tasks(60)
+    assert await state(tenant_id, task_id) == ("provisioning", 1, "accepted")
+
+
+async def test_late_done_after_timeout_is_ignored_and_warned_about(caplog):
+    tenant_id, task_id = await seed_task()
+    await make_quiet(task_id)
+    await fail_stuck_tasks(60)
+
+    with caplog.at_level(logging.WARNING):
+        assert await apply_update(update_msg(task_id, "done")) == "stale"
+
+    assert "worker reported done" in caplog.text
+    assert await state(tenant_id, task_id) == ("failed", 2, "failed")
