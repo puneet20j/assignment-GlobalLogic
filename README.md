@@ -287,8 +287,17 @@ Failure handling:
 
 The worker can lose a task: it crashes, or the task message ends up in `tasks-dlq`. The
 sweeper therefore fails any published task that has been open with no update for
-**360s** (`TASK_TIMEOUT_S`). That is longer than 5 deliveries × the 60s visibility timeout of
-`tasks`, so a task isn't timed out while SQS is still redelivering it. The tenant moves to `failed`,
+`TASK_TIMEOUT_S` seconds, checking every 30s. The default of **360s** is longer than 5
+deliveries × the 60s visibility timeout of `tasks`, so a task isn't timed out while SQS is
+still redelivering it. The app logs a warning on startup if it is set below 300.
+Override it when you boot:
+
+```bash
+TASK_TIMEOUT_S=600 docker compose up -d app
+```
+
+Keep it above the worker's longest run (`WORKER_MAX_DELAY_MS`). Otherwise the sweeper
+fails tasks that are still being worked on, and their late `done` is ignored as stale. The tenant moves to `failed`,
 which can then be `DELETE`d. A `done` that arrives after the timeout is ignored as stale
 and logged as a warning.
 
@@ -439,7 +448,7 @@ What the suite covers:
 
 ## Project layout
 
-```
+```text
 app/            control plane (api, tenants, relay, consumer, sweeper) and the worker
 migrations/     Alembic migration: tables, CHECK constraints, partial indexes
 tests/          integration test suite

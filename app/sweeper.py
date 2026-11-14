@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import os
 from datetime import timedelta
 
 from sqlalchemy import func, select
@@ -10,8 +11,9 @@ from app.tenants import finish_task
 
 logger = logging.getLogger(__name__)
 
-# above 300s, a task message can be retried for 5 receives of 60s before it reaches tasks-dlq
-TASK_TIMEOUT_S = 360
+# keep above 300s: a task message can be retried for 5 receives of 60s before it reaches
+# tasks-dlq, and above the worker's longest run (WORKER_MAX_DELAY_MS)
+TASK_TIMEOUT_S = int(os.environ.get("TASK_TIMEOUT_S", "360"))
 SWEEP_INTERVAL_S = 30
 
 
@@ -39,6 +41,9 @@ async def fail_stuck_tasks(timeout_s):
 
 
 async def run_sweeper():
+    logger.info("failing open tasks that are quiet for over %ds", TASK_TIMEOUT_S)
+    if TASK_TIMEOUT_S < 300:
+        logger.warning("TASK_TIMEOUT_S=%d can fail tasks SQS is still redelivering", TASK_TIMEOUT_S)
     attempt = 0
     while True:
         try:

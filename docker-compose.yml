@@ -41,6 +41,9 @@ services:
 
   app:
     <<: *app
+    environment:
+      <<: *env
+      TASK_TIMEOUT_S: ${TASK_TIMEOUT_S:-360}
     ports:
       - "8001:8000"
     depends_on:
