@@ -75,7 +75,7 @@ services:
   tests:
     <<: *app
     profiles: ["test"]
-    command: sh -c "ruff check . && ruff format --check . && pytest -v"
+    command: sh -c "ruff check . && ruff format --check . && pip-audit --strict && pytest -v"
 
 volumes:
   pgdata:

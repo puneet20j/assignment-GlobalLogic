@@ -371,12 +371,19 @@ duplicate a message, which the consumer deduplicates.
 
 `docker compose run --rm --build tests` runs, in order and stopping at the first failure:
 
-1. `ruff check .`: lint (pycodestyle, pyflakes, isort, bugbear, pyupgrade, simplify, async rules)
+1. `ruff check .`: lint (pycodestyle, pyflakes, isort, bugbear, pyupgrade, simplify, async
+   rules) plus static security analysis with the bandit rule set (`S`)
 2. `ruff format --check .`: every file must already be formatted
-3. `pytest -v`: the integration suite in [tests/test_flow.py](tests/test_flow.py), against
+3. `pip-audit --strict`: checks every package installed in the image against known
+   vulnerabilities (PyPI advisory database / OSV), including pip itself. This step needs
+   network access
+4. `pytest -v`: the integration suite in [tests/test_flow.py](tests/test_flow.py), against
    the real Postgres, ElasticMQ, app and worker
 
-There is no security scanner yet.
+Bandit exceptions are listed in [pyproject.toml](pyproject.toml), each with its reason:
+`assert` in tests, and `random` for backoff jitter and the simulated worker, where no
+cryptographic randomness is needed. The Dockerfile upgrades the base image's pip because
+pip-audit flags the bundled version.
 
 What the suite covers:
 
