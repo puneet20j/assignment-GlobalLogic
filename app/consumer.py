@@ -1,7 +1,7 @@
 import asyncio
 import logging
 
-from sqlalchemy import select, update
+from sqlalchemy import select, update, text
 from sqlalchemy.dialects.postgresql import insert
 
 from app.models import ProcessedUpdate, Session, Task, TaskStatus, TaskType, Tenant, TenantStatus
@@ -80,8 +80,24 @@ async def handle(sqs, queue_url, message):
         result = await apply_update(msg)
         await sqs.delete_message(QueueUrl=queue_url, ReceiptHandle=message["ReceiptHandle"])
         logger.info("update %s: %s", msg.update_id, result)
+        return True
     except Exception:
         logger.exception("message %s failed, it will come back", message["MessageId"])
+        return False
+    
+
+async def wait_for_database():
+    attempt = 0
+    while True:
+        try:
+            async with Session() as session:
+                await session.execute(text("SELECT 1"))
+            return
+        except Exception:
+            delay = retry_delay(attempt)
+            logger.warning("database is down, not receiving updates for %.1fs", delay)
+            await asyncio.sleep(delay)
+            attempt += 1
 
 
 async def run_consumer(sqs, queue_url):
@@ -93,7 +109,8 @@ async def run_consumer(sqs, queue_url):
             )
             attempt = 0
             for message in resp.get("Messages", []):
-                await handle(sqs, queue_url, message)
+                if not await handle(sqs, queue_url, message):
+                    await wait_for_database()
         except Exception:
             delay = retry_delay(attempt)
             logger.exception("receiving updates failed, retrying in %.1fs", delay)
