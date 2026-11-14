@@ -1,11 +1,13 @@
 import asyncio
 import logging
 
-from sqlalchemy import select, update
+from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 
-from app.models import ProcessedUpdate, Session, Task, TaskStatus, TaskType, Tenant, TenantStatus
+from app.models import ProcessedUpdate, Session, Task, TaskStatus
 from app.schemas import TaskUpdate
+from app.sqs import retry_delay
+from app.tenants import finish_task
 
 logger = logging.getLogger(__name__)
 
@@ -49,10 +51,10 @@ async def apply_update(msg):
         if RANK[msg.status] <= RANK[task.status]:
             return "stale"
 
-        task.status = msg.status
-        task.error = msg.error
-        if msg.status != TaskStatus.IN_PROGRESS:
-            await finish_tenant(session, task)
+        if msg.status == TaskStatus.IN_PROGRESS:
+            task.status = msg.status
+        else:
+            await finish_task(session, task, msg.status, msg.error)
     return "applied"
 
 

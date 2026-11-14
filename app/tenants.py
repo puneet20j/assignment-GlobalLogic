@@ -1,8 +1,22 @@
+import logging
+
 from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert
 
 from app.models import Session, Task, TaskType, Tenant, TenantStatus
 
+logger = logging.getLogger(__name__)
+
+STATUS_WHILE_OPEN = {
+    TaskType.DEPLOY: TenantStatus.PROVISIONING,
+    TaskType.UPDATE: TenantStatus.UPDATING,
+    TaskType.DESTROY: TenantStatus.DESTROYING,
+}
+STATUS_ON_DONE = {
+    TaskType.DEPLOY: TenantStatus.ACTIVE,
+    TaskType.UPDATE: TenantStatus.ACTIVE,
+    TaskType.DESTROY: TenantStatus.DESTROYED,
+}
 
 class ApiError(Exception):
     def __init__(self, http_status, code, message, **details):
@@ -10,6 +24,23 @@ class ApiError(Exception):
         self.code = code
         self.message = message
         self.details = details
+
+
+async def finish_task(session, task, outcome, error=None):
+    task.status = outcome
+    task.error = error
+    done = outcome == TaskStatus.DONE
+    tenant_id = await session.scalar(
+        update(Tenant)
+        .where(Tenant.id == task.tenant_id, Tenant.status == STATUS_WHILE_OPEN[task.type])
+        .values(
+            status=STATUS_ON_DONE[task.type] if done else TenantStatus.FAILED,
+            version=Tenant.version + 1,
+        )
+        .returning(Tenant.id)
+    )
+    if tenant_id is None:
+        logger.warning("task %s finished but tenant %s is not open", task.id, task.tenant_id)
 
 
 async def create_tenant(slug, name):
