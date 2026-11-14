@@ -48,6 +48,7 @@ async def apply_update(msg):
             return "duplicate"
 
         # accepted -> done allowed. Can overtake in_progress
+        # finish_task here doesnt commit. The task, tenant and the inbox must all commit together
         if RANK[msg.status] <= RANK[task.status]:
             return "stale"
 
