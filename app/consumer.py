@@ -1,10 +1,10 @@
 import asyncio
 import logging
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert
 
-from app.models import ProcessedUpdate, Session, Task, TaskStatus
+from app.models import ProcessedUpdate, Session, Task, TaskStatus, TaskType, Tenant, TenantStatus
 from app.schemas import TaskUpdate
 from app.sqs import retry_delay
 from app.tenants import finish_task
@@ -99,4 +99,3 @@ async def run_consumer(sqs, queue_url):
             logger.exception("receiving updates failed, retrying in %.1fs", delay)
             await asyncio.sleep(delay)
             attempt += 1
-

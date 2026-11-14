@@ -3,7 +3,7 @@ import logging
 from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert
 
-from app.models import Session, Task, TaskType, Tenant, TenantStatus
+from app.models import Session, Task, TaskStatus, TaskType, Tenant, TenantStatus
 
 logger = logging.getLogger(__name__)
 
@@ -17,6 +17,7 @@ STATUS_ON_DONE = {
     TaskType.UPDATE: TenantStatus.ACTIVE,
     TaskType.DESTROY: TenantStatus.DESTROYED,
 }
+
 
 class ApiError(Exception):
     def __init__(self, http_status, code, message, **details):

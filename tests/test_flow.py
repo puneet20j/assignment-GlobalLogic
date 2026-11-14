@@ -7,9 +7,16 @@ import pytest
 from sqlalchemy import func
 
 from app.consumer import apply_update
-from app.models import Session, Task, TaskType, Tenant, TenantStatus
+from app.models import (
+    Session,
+    Task,
+    TaskStatus,
+    TaskType,
+    Tenant,
+    TenantStatus,
+)
 from app.schemas import TaskUpdate
-from app.sqs import queue_url, sqs_client, retry_delay
+from app.sqs import queue_url, retry_delay, sqs_client
 
 API = "http://app:8000/v1"
 N = 30
@@ -244,3 +251,34 @@ def test_retry_delay_grows_and_is_capped():
     assert 0.5 <= retry_delay(0) <= 1
     assert 4 <= retry_delay(3) <= 8
     assert 15 <= retry_delay(50) <= 30
+
+
+async def test_unsendable_task_fails_without_blocking_the_relay(client):
+    async with Session.begin() as session:
+        tenant = Tenant(slug=new_slug(), name="no\uffffgood", status=TenantStatus.PROVISIONING)
+        session.add(tenant)
+        await session.flush()
+        task = Task(tenant_id=tenant.id, type=TaskType.DEPLOY)
+        session.add(task)
+
+    await wait_for(client, str(tenant.id), "failed")
+    async with Session() as session:
+        failed = await session.get(Task, task.id)
+    assert failed.status == TaskStatus.FAILED
+    assert failed.error == "could not be published"
+
+    await wait_for(client, (await create(client))["id"], "active")
+
+
+async def test_task_that_already_moved_on_is_not_sent_again(client):
+    async with Session.begin() as session:
+        tenant = Tenant(slug=new_slug(), name="Moved", status=TenantStatus.PROVISIONING)
+        session.add(tenant)
+        await session.flush()
+        task = Task(tenant_id=tenant.id, type=TaskType.DEPLOY, status=TaskStatus.IN_PROGRESS)
+        session.add(task)
+
+    await asyncio.sleep(1)
+    assert await state(tenant.id, task.id) == ("provisioning", 1, "in_progress")
+    async with Session() as session:
+        assert (await session.get(Task, task.id)).published_at is None
