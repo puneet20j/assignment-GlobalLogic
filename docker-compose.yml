@@ -68,7 +68,9 @@ services:
       WORKER_REORDER: ${WORKER_REORDER:-false}
       WORKER_MIN_DELAY_MS: ${WORKER_MIN_DELAY_MS:-500}
       WORKER_MAX_DELAY_MS: ${WORKER_MAX_DELAY_MS:-2000}
-    command: python -m app.worker
+    # CLI flags go after the entrypoint, e.g. WORKER_ARGS="--fail-rate=1 --reorder"
+    entrypoint: ["python", "-m", "app.worker"]
+    command: ${WORKER_ARGS:-}
     init: true
     depends_on:
       - elasticmq

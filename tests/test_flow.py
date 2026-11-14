@@ -22,6 +22,7 @@ from app.schemas import TaskUpdate
 from app.sqs import queue_url, retry_delay, sqs_client
 from app.sweeper import fail_stuck_tasks
 from app.tenants import ApiError, _explain_rejection
+from app.worker import parse_args
 from redrive import redrive
 
 API = "http://app:8000/v1"
@@ -361,6 +362,31 @@ async def test_published_event_carries_the_task():
     assert body["tenant_id"] == str(tenant_id)
     assert body["status"] == "accepted"
     assert body["created_at"].endswith("Z")
+
+
+def test_worker_flags_override_env(monkeypatch):
+    monkeypatch.setenv("WORKER_FAIL_RATE", "0.5")
+    monkeypatch.setenv("WORKER_REORDER", "true")
+
+    from_env = parse_args([])
+    assert (from_env.fail_rate, from_env.reorder, from_env.max_delay_ms) == (0.5, True, 2000)
+
+    cfg = parse_args(["--fail-rate=1", "--no-reorder", "--min-delay-ms=0", "--max-delay-ms=10"])
+    assert (cfg.fail_rate, cfg.reorder, cfg.min_delay_ms, cfg.max_delay_ms) == (1, False, 0, 10)
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["--fail-rate=1.5"],
+        ["--duplicate-rate=-0.1"],
+        ["--min-delay-ms=-1"],
+        ["--min-delay-ms=900", "--max-delay-ms=100"],
+    ],
+)
+def test_worker_rejects_bad_flags(argv):
+    with pytest.raises(SystemExit):
+        parse_args(argv)
 
 
 def test_retry_delay_grows_and_is_capped():

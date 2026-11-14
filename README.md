@@ -326,20 +326,34 @@ one winner.
 
 ### By restarting the worker with different settings
 
-| Variable                | Default | Effect |
-| ----------------------- | ------- | ------ |
-| `WORKER_FAIL_RATE`      | `0`     | Probability (0–1) that a task ends `failed` |
-| `WORKER_DUPLICATE_RATE` | `0`     | Probability that each update is sent twice |
-| `WORKER_REORDER`        | `false` | Send the terminal update **before** `in_progress` |
-| `WORKER_MIN_DELAY_MS`   | `500`   | Minimum simulated work time |
-| `WORKER_MAX_DELAY_MS`   | `2000`  | Maximum simulated work time |
+Each setting is a CLI flag whose default comes from an env var. If both are set, the flag
+wins. Invalid values (a rate outside 0–1, a negative delay, min > max) stop the worker at
+startup with a usage error.
+
+| Flag                     | Env var                 | Default | Effect |
+| ------------------------ | ----------------------- | ------- | ------ |
+| `--fail-rate`            | `WORKER_FAIL_RATE`      | `0`     | Probability (0–1) that a task ends `failed` |
+| `--duplicate-rate`       | `WORKER_DUPLICATE_RATE` | `0`     | Probability that each update is sent twice |
+| `--reorder` / `--no-reorder` | `WORKER_REORDER`    | `false` | Send the terminal update **before** `in_progress` |
+| `--min-delay-ms`         | `WORKER_MIN_DELAY_MS`   | `500`   | Minimum simulated work time |
+| `--max-delay-ms`         | `WORKER_MAX_DELAY_MS`   | `2000`  | Maximum simulated work time |
+
+The worker's entrypoint is `python -m app.worker`, and `WORKER_ARGS` holds the flags for
+`up`. The worker logs the settings it ended up with at startup
+(`docker compose logs worker`).
 
 ```bash
-WORKER_FAIL_RATE=1 docker compose up -d worker        # every task fails -> tenant failed
-WORKER_DUPLICATE_RATE=1 docker compose up -d worker   # every update twice -> logged as "duplicate"
-WORKER_REORDER=true docker compose up -d worker       # done before in_progress -> in_progress "stale"
-docker compose stop worker                            # tasks stay accepted; the sweeper fails them after 360s
-docker compose up -d worker                           # back to defaults
+WORKER_ARGS="--fail-rate=1" docker compose up -d worker       # every task fails -> tenant failed
+WORKER_ARGS="--duplicate-rate=1" docker compose up -d worker  # every update twice -> "duplicate"
+WORKER_ARGS="--reorder" docker compose up -d worker           # done before in_progress -> "stale"
+WORKER_FAIL_RATE=1 docker compose up -d worker                # same as --fail-rate=1, via env
+docker compose stop worker              # tasks stay accepted; the sweeper fails them after TASK_TIMEOUT_S
+docker compose up -d worker             # back to defaults
+
+# or stop the service and run a one-off worker in the foreground with flags
+docker compose stop worker
+docker compose run --rm worker --fail-rate=0.5 --max-delay-ms=5000
+docker compose run --rm --no-deps worker --help
 ```
 
 Follow what the consumer does with `docker compose logs -f app`. Each update is logged as
