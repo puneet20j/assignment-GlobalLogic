@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 
 from app.models import TaskStatus
 from app.schemas import TaskMessage, TaskUpdate
-from app.sqs import queue_url, sqs_client
+from app.sqs import queue_url, retry_delay, sqs_client
 
 FAIL_RATE = float(os.environ.get("WORKER_FAIL_RATE", "0"))
 DUPLICATE_RATE = float(os.environ.get("WORKER_DUPLICATE_RATE", "0"))
@@ -68,15 +68,19 @@ async def main():
         tasks_url = await queue_url(sqs, "tasks")
         updates_url = await queue_url(sqs, "task-updates")
         logger.info("worker started")
+        attempt = 0
         while True:
             try:
                 resp = await sqs.receive_message(
                     QueueUrl=tasks_url, MaxNumberOfMessages=10, WaitTimeSeconds=5
                 )
             except Exception:
-                logger.exception("receiving tasks failed, retrying")
-                await asyncio.sleep(1)
+                delay = retry_delay(attempt)
+                logger.exception("receiving tasks failed, retrying in %.1fs", delay)
+                await asyncio.sleep(delay)
+                attempt += 1
                 continue
+            attempt = 0
             # tasks of different tenants are independent, run the batch concurrently
             messages = resp.get("Messages", [])
             await asyncio.gather(*(handle(sqs, tasks_url, updates_url, m) for m in messages))

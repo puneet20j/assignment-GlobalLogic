@@ -9,7 +9,7 @@ from sqlalchemy import func
 from app.consumer import apply_update
 from app.models import Session, Task, TaskType, Tenant, TenantStatus
 from app.schemas import TaskUpdate
-from app.sqs import queue_url, sqs_client
+from app.sqs import queue_url, sqs_client, retry_delay
 
 API = "http://app:8000/v1"
 N = 30
@@ -238,3 +238,9 @@ async def test_poison_message_reaches_dlq():
                 if message["Body"] == body:
                     return
     raise AssertionError("poison message never reached the DLQ")
+
+
+def test_retry_delay_grows_and_is_capped():
+    assert 0.5 <= retry_delay(0) <= 1
+    assert 4 <= retry_delay(3) <= 8
+    assert 15 <= retry_delay(50) <= 30

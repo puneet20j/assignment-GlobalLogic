@@ -82,13 +82,18 @@ async def handle(sqs, queue_url, message):
 
 
 async def run_consumer(sqs, queue_url):
+    attempt = 0
     while True:
         try:
             resp = await sqs.receive_message(
                 QueueUrl=queue_url, MaxNumberOfMessages=10, WaitTimeSeconds=5
             )
+            attempt = 0
             for message in resp.get("Messages", []):
                 await handle(sqs, queue_url, message)
         except Exception:
-            logger.exception("receiving updates failed, retrying")
-            await asyncio.sleep(1)
+            delay = retry_delay(attempt)
+            logger.exception("receiving updates failed, retrying in %.1fs", delay)
+            await asyncio.sleep(delay)
+            attempt += 1
+

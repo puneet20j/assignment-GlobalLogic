@@ -5,6 +5,8 @@ from sqlalchemy import func, select
 
 from app.models import Session, Task, Tenant
 from app.schemas import TaskMessage, TenantRef
+from app.sqs import retry_delay
+
 
 logger = logging.getLogger(__name__)
 
@@ -39,10 +41,14 @@ async def publish_one(sqs, queue_url):
 
 
 async def run_relay(sqs, queue_url):
+    attempt = 0
     while True:
         try:
             if not await publish_one(sqs, queue_url):
                 await asyncio.sleep(0.3)
+            attempt = 0
         except Exception:
-            logger.exception("relay failed, retrying")
-            await asyncio.sleep(1)
+            delay = retry_delay(attempt)
+            logger.exception("relay failed, retrying in %.1fs", delay)
+            await asyncio.sleep(delay)
+            attempt += 1

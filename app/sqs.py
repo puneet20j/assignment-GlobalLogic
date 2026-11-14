@@ -1,11 +1,17 @@
 import asyncio
 import logging
 import os
+import random
 
 import aioboto3
 from botocore.exceptions import BotoCoreError, ClientError
 
 logger = logging.getLogger(__name__)
+
+
+def retry_delay(attempt):
+    """Exponential backoff with jitter"""
+    return min(30, 2**attempt) * random.uniform(0.5, 1)
 
 
 def sqs_client():
