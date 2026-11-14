@@ -1,4 +1,5 @@
 import asyncio
+import json
 import logging
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -16,6 +17,7 @@ from app.models import (
     Tenant,
     TenantStatus,
 )
+from app.relay import task_message
 from app.schemas import TaskUpdate
 from app.sqs import queue_url, retry_delay, sqs_client
 from app.sweeper import fail_stuck_tasks
@@ -57,14 +59,27 @@ async def wait_for(client, tenant_id, status):
     raise AssertionError(f"tenant is '{tenant['status']}', expected '{status}'")
 
 
-async def seed_task():
+async def seed_task(task_type=TaskType.DEPLOY, tenant_status=TenantStatus.PROVISIONING):
+    """A tenant with one published, accepted task, bypassing the API and the worker."""
     async with Session.begin() as session:
-        tenant = Tenant(slug=new_slug(), name="Seed", status=TenantStatus.PROVISIONING)
+        tenant = Tenant(slug=new_slug(), name="Seed", status=tenant_status)
         session.add(tenant)
         await session.flush()
-        task = Task(tenant_id=tenant.id, type=TaskType.DEPLOY, published_at=func.now())
+        task = Task(tenant_id=tenant.id, type=task_type, published_at=func.now())
         session.add(task)
     return tenant.id, task.id
+
+
+async def seed_tenant(status):
+    """A tenant at rest in any status, with no open task."""
+    async with Session.begin() as session:
+        tenant = Tenant(slug=new_slug(), name="Seed", status=status)
+        session.add(tenant)
+    return tenant
+
+
+async def task_count(client, tenant_id):
+    return len((await client.get(f"/tenants/{tenant_id}/tasks")).json()["items"])
 
 
 def update_msg(task_id, status):
@@ -134,6 +149,63 @@ async def test_patch_not_allowed_while_provisioning(client):
     resp = await client.patch(f"/tenants/{tenant['id']}", json={"name": "X", "version": 1})
     assert resp.status_code == 409
     assert resp.json()["error"]["code"] == "tenant_update_not_allowed"
+
+
+TRANSITIONS = {
+    # status: (PATCH allowed, DELETE allowed)
+    TenantStatus.PROVISIONING: (False, False),
+    TenantStatus.ACTIVE: (True, True),
+    TenantStatus.UPDATING: (False, False),
+    TenantStatus.DESTROYING: (False, False),
+    TenantStatus.DESTROYED: (False, False),
+    TenantStatus.FAILED: (False, True),
+}
+
+
+@pytest.mark.parametrize("status", list(TRANSITIONS))
+async def test_patch_guard(client, status):
+    tenant = await seed_tenant(status)
+    resp = await client.patch(f"/tenants/{tenant.id}", json={"name": "X", "version": 1})
+
+    if TRANSITIONS[status][0]:
+        assert resp.status_code == 202
+        assert resp.json()["tenant"]["status"] == "updating"
+        assert resp.json()["task"]["type"] == "update"
+    else:
+        assert resp.status_code == 409
+        assert resp.json()["error"]["code"] == "tenant_update_not_allowed"
+        assert await task_count(client, tenant.id) == 0
+
+
+@pytest.mark.parametrize("status", list(TRANSITIONS))
+async def test_delete_guard(client, status):
+    tenant = await seed_tenant(status)
+    resp = await client.delete(f"/tenants/{tenant.id}")
+
+    if TRANSITIONS[status][1]:
+        assert resp.status_code == 202
+        assert resp.json()["tenant"]["status"] == "destroying"
+        assert resp.json()["task"]["type"] == "destroy"
+    else:
+        assert resp.status_code == 409
+        assert resp.json()["error"]["code"] == "tenant_update_not_allowed"
+        assert await task_count(client, tenant.id) == 0
+
+
+async def test_rejected_calls_create_no_task(client):
+    tenant = await create(client)
+    url = f"/tenants/{tenant['id']}"
+
+    assert (await client.patch(url, json={"name": "X", "version": 1})).status_code == 409
+    assert (await client.delete(url)).status_code == 409
+    resp = await client.post("/tenants", json={"slug": tenant["slug"], "name": "Dup"})
+    assert resp.status_code == 409
+
+    active = await wait_for(client, tenant["id"], "active")
+    assert (await client.patch(url, json={"name": "X", "version": 1})).status_code == 409
+    assert active["version"] == 2
+    tasks = (await client.get(f"{url}/tasks")).json()["items"]
+    assert [t["type"] for t in tasks] == ["deploy"]
 
 
 @pytest.mark.parametrize(
@@ -230,6 +302,32 @@ async def test_terminal_status_never_changes():
     assert await state(tenant_id, task_id) == ("failed", 2, "failed")
 
 
+@pytest.mark.parametrize(
+    "task_type, open_status, outcome, final_status",
+    [
+        (TaskType.DEPLOY, TenantStatus.PROVISIONING, "done", "active"),
+        (TaskType.DEPLOY, TenantStatus.PROVISIONING, "failed", "failed"),
+        (TaskType.UPDATE, TenantStatus.UPDATING, "done", "active"),
+        (TaskType.UPDATE, TenantStatus.UPDATING, "failed", "failed"),
+        (TaskType.DESTROY, TenantStatus.DESTROYING, "done", "destroyed"),
+        (TaskType.DESTROY, TenantStatus.DESTROYING, "failed", "failed"),
+    ],
+)
+async def test_terminal_outcome_moves_tenant(task_type, open_status, outcome, final_status):
+    tenant_id, task_id = await seed_task(task_type, open_status)
+
+    assert await apply_update(update_msg(task_id, "in_progress")) == "applied"
+    assert await apply_update(update_msg(task_id, outcome)) == "applied"
+    assert await state(tenant_id, task_id) == (final_status, 2, outcome)
+
+
+async def test_in_progress_leaves_tenant_alone():
+    tenant_id, task_id = await seed_task()
+
+    assert await apply_update(update_msg(task_id, "in_progress")) == "applied"
+    assert await state(tenant_id, task_id) == ("provisioning", 1, "in_progress")
+
+
 async def test_unknown_task_is_refused():
     with pytest.raises(ValueError):
         await apply_update(update_msg(uuid.uuid4(), "done"))
@@ -249,6 +347,20 @@ async def test_poison_message_reaches_dlq():
                 if message["Body"] == body:
                     return
     raise AssertionError("poison message never reached the DLQ")
+
+
+async def test_published_event_carries_the_task():
+    tenant_id, task_id = await seed_task()
+    async with Session() as session:
+        task = await session.get(Task, task_id)
+        tenant = await session.get(Tenant, tenant_id)
+
+    body = json.loads(task_message(task, tenant).model_dump_json())
+    assert body["id"] == str(task_id)
+    assert body["type"] == "deploy"
+    assert body["tenant_id"] == str(tenant_id)
+    assert body["status"] == "accepted"
+    assert body["created_at"].endswith("Z")
 
 
 def test_retry_delay_grows_and_is_capped():

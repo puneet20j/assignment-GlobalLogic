@@ -48,6 +48,13 @@ services:
         condition: service_completed_successfully
       elasticmq:
         condition: service_started
+    # healthy once the lifespan has found the queues and uvicorn is serving
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz', timeout=2)"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+      start_period: 5s
 
   worker:
     <<: *app
@@ -76,6 +83,12 @@ services:
     <<: *app
     profiles: ["test"]
     command: sh -c "ruff check . && ruff format --check . && pip-audit --strict && pytest -v"
+    # the suite drives the live stack, so `docker compose run tests` boots it first
+    depends_on:
+      app:
+        condition: service_healthy
+      worker:
+        condition: service_started
 
 volumes:
   pgdata:

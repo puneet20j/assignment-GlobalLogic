@@ -17,8 +17,12 @@ docker compose up -d --build              # boot: postgres, elasticmq, migration
 docker compose run --rm --build tests     # test: ruff lint + ruff format check + pytest
 ```
 
-The test suite runs against the booted stack (it calls the live API and broker), so
-run the boot command first.
+The test command works on its own, from a cold start. The suite calls the live API and
+broker, so `tests` depends on `app` (once its healthcheck passes) and `worker`, and Compose
+boots whatever isn't already running. If you restarted the worker with failure settings
+(see [Reproducing failure scenarios](#reproducing-failure-scenarios)), run
+`docker compose up -d worker` first to return it to the defaults. The lifecycle tests expect
+tasks to succeed.
 
 | What                   | Where                           |
 | ---------------------- | ------------------------------- |
@@ -388,7 +392,13 @@ pip-audit flags the bundled version.
 What the suite covers:
 
 - **State machine:** the full lifecycle create → update → destroy, a slug reserved after
-  destroy, PATCH refused while provisioning, a stale version rejected, and DELETE from `failed`.
+  destroy, and a stale version rejected. A matrix of all six tenant statuses checks which
+  ones allow PATCH and DELETE. Every task type × outcome is checked for the tenant status
+  it leads to (deploy/update/destroy × done/failed), and `in_progress` leaves the tenant and
+  its version unchanged.
+- **Outbound:** rejected calls (wrong status, stale version, duplicate slug) create no task,
+  so nothing can be published, and the event carries the task's `id`, `type`, `tenant_id`
+  and `status`.
 - **Concurrency:** 30 parallel creates, PATCHes and DELETEs, each with exactly one winner, and
   10 parallel deliveries of the same update applied once.
 - **Messaging:** duplicates, `done` arriving before `in_progress`, terminal statuses that never

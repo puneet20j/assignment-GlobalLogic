@@ -20,6 +20,18 @@ from app.tenants import finish_task
 logger = logging.getLogger(__name__)
 
 
+def task_message(task, tenant):
+    """The task is the event: everything a consumer needs to act on it."""
+    return TaskMessage(
+        id=task.id,
+        type=task.type,
+        tenant_id=task.tenant_id,
+        status=task.status,
+        created_at=task.created_at,
+        tenant=TenantRef(slug=tenant.slug, name=tenant.name),
+    )
+
+
 async def publish_one(sqs, queue_url):
     """Sends the oldest unpublished task in its own transaction"""
     async with Session.begin() as session:
@@ -36,14 +48,7 @@ async def publish_one(sqs, queue_url):
             return False
 
         task, tenant = row
-        message = TaskMessage(
-            id=task.id,
-            type=task.type,
-            tenant_id=task.tenant_id,
-            status=task.status,
-            created_at=task.created_at,
-            tenant=TenantRef(slug=tenant.slug, name=tenant.name),
-        )
+        message = task_message(task, tenant)
         try:
             await sqs.send_message(QueueUrl=queue_url, MessageBody=message.model_dump_json())
         except ClientError as exc:
