@@ -103,10 +103,13 @@ async def _explain_rejection(session, tenant_id, version, allowed):
             current_version=tenant.version,
             expected_version=version,
         )
+    message = f"not allowed in status '{tenant.status}'"
+    if tenant.status in allowed:
+        message = f"tenant changed to '{tenant.status}' during the request, retry"
     raise ApiError(
         409,
         "tenant_update_not_allowed",
-        f"not allowed in status '{tenant.status}'",
+        message,
         status=tenant.status,
         allowed_statuses=sorted(allowed),
     )

@@ -19,6 +19,7 @@ from app.models import (
 from app.schemas import TaskUpdate
 from app.sqs import queue_url, retry_delay, sqs_client
 from app.sweeper import fail_stuck_tasks
+from app.tenants import ApiError, _explain_rejection
 from redrive import redrive
 
 API = "http://app:8000/v1"
@@ -338,3 +339,18 @@ async def test_redrive_brings_a_dead_lettered_update_back():
             return
         await asyncio.sleep(0.1)
     raise AssertionError("redriven update was never applied")
+
+
+async def test_delete_race_message_does_not_contradict_itself():
+    tenant_id, _ = await seed_task()
+    async with Session.begin() as session:
+        await session.execute(
+            update(Tenant).where(Tenant.id == tenant_id).values(status=TenantStatus.ACTIVE)
+        )
+
+    async with Session() as session:
+        with pytest.raises(ApiError) as caught:
+            await _explain_rejection(session, tenant_id, None, {TenantStatus.ACTIVE})
+
+    assert caught.value.code == "tenant_update_not_allowed"
+    assert "retry" in caught.value.message
