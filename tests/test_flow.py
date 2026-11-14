@@ -19,6 +19,7 @@ from app.models import (
 from app.schemas import TaskUpdate
 from app.sqs import queue_url, retry_delay, sqs_client
 from app.sweeper import fail_stuck_tasks
+from redrive import redrive
 
 API = "http://app:8000/v1"
 N = 30
@@ -320,3 +321,20 @@ async def test_late_done_after_timeout_is_ignored_and_warned_about(caplog):
 
     assert "worker reported done" in caplog.text
     assert await state(tenant_id, task_id) == ("failed", 2, "failed")
+
+
+async def test_redrive_brings_a_dead_lettered_update_back():
+    tenant_id, task_id = await seed_task()
+    async with sqs_client() as sqs:
+        updates = await queue_url(sqs, "task-updates")
+        dlq = await queue_url(sqs, "task-updates-dlq")
+        await sqs.send_message(
+            QueueUrl=dlq, MessageBody=update_msg(task_id, "done").model_dump_json()
+        )
+        assert await redrive(sqs, dlq, updates, limit=1) == 1
+
+    for _ in range(100):  # the live consumer applies it
+        if (await state(tenant_id, task_id))[0] == "active":
+            return
+        await asyncio.sleep(0.1)
+    raise AssertionError("redriven update was never applied")
